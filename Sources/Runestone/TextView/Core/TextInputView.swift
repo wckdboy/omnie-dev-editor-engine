@@ -1580,6 +1580,11 @@ extension TextInputView {
 
 // MARK: - TreeSitterLanguageModeDeleage
 extension TextInputView: TreeSitterLanguageModeDelegate {
+    func treeSitterLanguageMode(_ languageMode: TreeSitterInternalLanguageMode, didReparseChanging lineChangeSet: LineChangeSet) {
+        guard languageMode === self.languageMode else { return }
+        applyLineChangesToLayoutManager(lineChangeSet)
+    }
+
     func treeSitterLanguageMode(_ languageMode: TreeSitterInternalLanguageMode, bytesAt byteIndex: ByteCount) -> TreeSitterTextProviderResult? {
         guard byteIndex.value >= 0 && byteIndex < stringView.string.byteCount else {
             return nil

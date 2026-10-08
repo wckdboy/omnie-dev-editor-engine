@@ -3,6 +3,8 @@ import TreeSitter
 
 protocol TreeSitterLanguageModeDelegate: AnyObject {
     func treeSitterLanguageMode(_ languageMode: TreeSitterInternalLanguageMode, bytesAt byteIndex: ByteCount) -> TreeSitterTextProviderResult?
+    /// A background reparse finished (patch 0007); these lines need re-highlighting.
+    func treeSitterLanguageMode(_ languageMode: TreeSitterInternalLanguageMode, didReparseChanging lineChangeSet: LineChangeSet)
 }
 
 final class TreeSitterInternalLanguageMode: InternalLanguageMode {
@@ -31,6 +33,10 @@ final class TreeSitterInternalLanguageMode: InternalLanguageMode {
             stringView: stringView,
             lineManager: lineManager)
         parser.delegate = self
+        rootLanguageLayer.onBackgroundReparse = { [weak self] lineChangeSet in
+            guard let self else { return }
+            self.delegate?.treeSitterLanguageMode(self, didReparseChanging: lineChangeSet)
+        }
     }
 
     deinit {

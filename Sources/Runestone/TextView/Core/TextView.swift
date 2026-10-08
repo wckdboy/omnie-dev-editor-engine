@@ -197,6 +197,17 @@ open class TextView: UIScrollView {
             textInputView.selectedTextRange = newValue
         }
     }
+    /// A custom input view to show instead of the system keyboard when the receiver becomes the first
+    /// responder; nil shows the system keyboard. Omnie-dev patch 0008.
+    override public var inputView: UIView? {
+        get { _inputView }
+        set {
+            _inputView = newValue
+            if textInputView.isFirstResponder { textInputView.reloadInputViews() }
+        }
+    }
+    private var _inputView: UIView?
+
     #if compiler(<5.9) || !os(visionOS)
     /// The custom input accessory view to display when the receiver becomes the first responder.
     override public var inputAccessoryView: UIView? {

@@ -15,6 +15,22 @@ final class TreeSitterLanguageLayer {
     private var childLanguageLayerStore = TreeSitterLanguageLayerStore()
     private weak var parentLanguageLayer: TreeSitterLanguageLayer?
     private let languageProvider: TreeSitterLanguageProvider?
+
+    // Patch 0007: incremental reparse off the main thread. Edits are applied to the tree on the main
+    // thread (cheap, keeps node positions correct); the reparse runs on a serial queue against an
+    // immutable snapshot of the text with its own parser, then the new tree and the changed lines come
+    // back to the main thread. If more edits arrived meanwhile, the result is dropped and the next
+    // parse starts from the latest text. Layers with injections keep the synchronous path.
+    var onBackgroundReparse: ((LineChangeSet) -> Void)?
+    private static let parseQueue = DispatchQueue(label: "omnie.editor.tree-sitter.parse", qos: .userInitiated)
+    private lazy var backgroundParser = TreeSitterParser(encoding: parser.encoding)
+    private var editGeneration = 0
+    private var isBackgroundParsing = false
+    private var canParseInBackground: Bool {
+        onBackgroundReparse != nil && parentLanguageLayer == nil && language.injectionsQuery == nil
+            && childLanguageLayerStore.allLayers.isEmpty && tree != nil
+    }
+
     private var isEmpty: Bool {
         if let rootNode = tree?.rootNode {
             return rootNode.endByte - rootNode.startByte <= ByteCount(0)
@@ -67,6 +83,13 @@ extension TreeSitterLanguageLayer {
     }
 
     private func apply(_ edit: TreeSitterInputEdit, parsing ranges: [TreeSitterTextRange] = []) -> LineChangeSet {
+        if canParseInBackground {
+            tree?.apply(edit)
+            editGeneration += 1
+            scheduleBackgroundParse()
+            // The edited lines themselves are already in the text edit's change set.
+            return LineChangeSet()
+        }
         // Apply edit to tree.
         let oldTree = tree
         tree?.apply(edit)
@@ -88,6 +111,40 @@ extension TreeSitterLanguageLayer {
         let childLineChangeSet = updateChildLayers(applying: edit)
         lineChangeSet.union(with: childLineChangeSet)
         return lineChangeSet
+    }
+
+    private func scheduleBackgroundParse() {
+        guard !isBackgroundParsing, let tree else { return }
+        isBackgroundParsing = true
+        let generation = editGeneration
+        // An immutable snapshot: the parser must never read the live, mutable string from another thread.
+        let snapshot = stringView.string.copy() as! NSString
+        let oldTree = tree.copy()
+        let parser = backgroundParser
+        parser.language = language.languagePointer
+        parser.removeAllIncludedRanges()
+        Self.parseQueue.async { [weak self] in
+            let newTree = snapshot.length > 0 ? parser.parse(snapshot, oldTree: oldTree) : nil
+            let changedRanges = newTree.map { oldTree.rangesChanged(comparingTo: $0) } ?? []
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBackgroundParsing = false
+                guard generation == self.editGeneration else {
+                    self.scheduleBackgroundParse()
+                    return
+                }
+                self.tree = newTree
+                let lineChangeSet = LineChangeSet()
+                for changedRange in changedRanges {
+                    let startRow = Int(changedRange.startPoint.row)
+                    let endRow = Int(changedRange.endPoint.row)
+                    for row in startRow ... endRow where row < self.lineManager.lineCount {
+                        lineChangeSet.markLineEdited(self.lineManager.line(atRow: row))
+                    }
+                }
+                self.onBackgroundReparse?(lineChangeSet)
+            }
+        }
     }
 
     private func prepareParser(toParse ranges: [TreeSitterTextRange]) {

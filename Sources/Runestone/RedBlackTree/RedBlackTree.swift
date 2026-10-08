@@ -43,7 +43,30 @@ final class RedBlackTree<NodeID: RedBlackTreeNodeID, NodeValue: RedBlackTreeNode
             return nil
             #endif
         }
-        return node(containingLocation: location, minimumValue: minimumValue, valueKeyPath: \.value, totalValueKeyPath: \.nodeTotalValue)
+        // Patch 0006: the same search as node(containingLocation:minimumValue:valueKeyPath:totalValueKeyPath:)
+        // with direct field access.
+        if location == root.nodeTotalValue {
+            return root.rightMost
+        }
+        var remainingLocation = location
+        var node = root!
+        while true {
+            if let leftNode = node.left, remainingLocation < leftNode.nodeTotalValue {
+                node = leftNode
+            } else {
+                if let leftNode = node.left {
+                    remainingLocation -= leftNode.nodeTotalValue
+                }
+                remainingLocation -= node.value
+                if remainingLocation < minimumValue {
+                    return node
+                } else if let rightNode = node.right {
+                    node = rightNode
+                } else {
+                    return nil
+                }
+            }
+        }
     }
 
     func node<T: Comparable & AdditiveArithmetic>(containingLocation location: T,
@@ -118,8 +141,21 @@ final class RedBlackTree<NodeID: RedBlackTreeNodeID, NodeValue: RedBlackTreeNode
         }
     }
 
+    // Omnie-dev patch 0006: direct field access instead of KeyPath. In this generic hot path the key
+    // paths were instantiated at runtime on every call (swift_getKeyPath showed up in scroll profiles).
     func location(of node: Node) -> NodeValue {
-        offset(of: node, valueKeyPath: \.value, totalValueKeyPath: \.nodeTotalValue, minimumValue: minimumValue)
+        var location = node.left?.nodeTotalValue ?? minimumValue
+        var workingNode = node
+        while let parentNode = workingNode.parent {
+            if workingNode === parentNode.right {
+                if let leftNode = parentNode.left {
+                    location += leftNode.nodeTotalValue
+                }
+                location += parentNode.value
+            }
+            workingNode = parentNode
+        }
+        return location
     }
 
     func offset<T: AdditiveArithmetic>(of node: Node, valueKeyPath: KeyPath<Node, T>, totalValueKeyPath: KeyPath<Node, T>, minimumValue: T) -> T {

@@ -35,7 +35,7 @@ final class LayoutManager {
             }
         }
     }
-    var theme: Theme = DefaultTheme() {
+    var theme: Theme = DefaultTheme.placeholder {
         didSet {
             if theme !== oldValue {
                 gutterBackgroundView.backgroundColor = theme.gutterBackgroundColor

@@ -19,6 +19,12 @@ public final class DefaultTheme: Runestone.Theme {
 
     public init() {}
 
+    /// One shared instance for internal placeholder defaults. Building a DefaultTheme loads named
+    /// colors from the asset catalog, and line controllers and highlighters are created for every
+    /// line that scrolls into view; constructing one per line cost more than half of scroll layout
+    /// time in profiling (Omnie-dev patch 0004).
+    static let placeholder = DefaultTheme()
+
     // swiftlint:disable:next cyclomatic_complexity
     public func textColor(for highlightName: String) -> UIColor? {
         guard let highlightName = HighlightName(highlightName) else {

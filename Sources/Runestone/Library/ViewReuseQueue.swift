@@ -29,7 +29,6 @@ final class ViewReuseQueue<Key: Hashable, View: UIView & ReusableView> {
         for key in keys {
             if let view = visibleViews.removeValue(forKey: key) {
                 view.prepareForReuse()
-                view.removeFromSuperview()
                 queueViewIfNeeded(view)
             }
         }
@@ -49,16 +48,25 @@ final class ViewReuseQueue<Key: Hashable, View: UIView & ReusableView> {
         }
     }
 
+    // Omnie-dev patch 0005: queued views stay in the hierarchy, parked offscreen, instead of being
+    // removed and re-added (or hidden). Adding, removing and hiding subviews all make UIKit re-run focus
+    // and view-visitor bookkeeping for every line that scrolls in or out, which dominated scroll time
+    // in profiling; a frame change doesn't. The queue may also hold as many views as are visible (was a
+    // quarter), so a fast fling reuses views instead of allocating new ones every frame. A memory
+    // warning still drops them. Layout sets a dequeued view's frame before it's shown.
+    private static var parkedOrigin: CGPoint { CGPoint(x: -100_000, y: -100_000) }
+
     private func queueViewIfNeeded(_ view: View) {
-        // There's no need to let the queue grow large but deciding on a good number of views to allow in the queue is difficult.
-        // We make it a function of the number of visible views. There'll rarely be any need for the queue to grow larger than
-        // the number of visible views. In fact, in most cases it can be much smaller.
-        if queuedViews.count < visibleViews.count / 4 {
+        if queuedViews.count < max(visibleViews.count, 16) {
+            view.frame.origin = Self.parkedOrigin
             queuedViews.insert(view)
+        } else {
+            view.removeFromSuperview()
         }
     }
 
     @objc private func clearMemory() {
+        for view in queuedViews { view.removeFromSuperview() }
         queuedViews.removeAll()
     }
 }

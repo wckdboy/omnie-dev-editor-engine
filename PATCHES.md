@@ -5,5 +5,6 @@
 | # | Patch | Why | Upstream status |
 |---|---|---|---|
 | 0001 | Remove private API: public `interactions` lookup for the selection display, public `UITextCursorView.isBlinking`, drop the `UITextReplacement` KVC autocorrect path and the `_UIScrollPocket` lookup | Spike test 11 (zero private selectors or KVC keys) and App Review | Not upstreamed (changes behavior: no autocorrect suggestion menu in code views) |
+| 0002 | `UITextInput.text(in:)` returns `""` instead of `nil` for empty and end-of-buffer ranges; internal callers unchanged | iOS 26.1 Writing Tools crash on Return at end of buffer ([#413](https://github.com/simonbs/Runestone/issues/413)) | Candidate for upstream (narrower than the patch in #413) |
 
 Fork base: Runestone 0.5.2 (`592434a`, 25 Mar 2026).

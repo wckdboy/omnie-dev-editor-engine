@@ -1,12 +1,9 @@
 import UIKit
 
-#if compiler(>=5.9)
-
 @available(iOS 17, *)
 extension UITextSelectionDisplayInteraction {
     func sbs_enableCursorBlinks() {
-        setValue(true, forKey: "rosruc".reversed() + "Blinks")
+        // Public since iOS 17 via UITextCursorView (Omnie-dev patch 0001).
+        cursorView.isBlinking = true
     }
 }
-
-#endif

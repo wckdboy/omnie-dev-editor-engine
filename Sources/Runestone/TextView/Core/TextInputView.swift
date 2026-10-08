@@ -739,18 +739,6 @@ final class TextInputView: UIView, UITextInput {
         selectedRange = NSRange(location: 0, length: string.length)
     }
 
-    /// When autocorrection is enabled and the user tap on a misspelled word, UITextInteraction will present
-    /// a UIMenuController with suggestions for the correct spelling of the word. Selecting a suggestion will
-    /// cause UITextInteraction to call the non-existing -replace(_:) function and pass an instance of the private
-    /// UITextReplacement type as parameter. We can't make autocorrection work properly without using private API.
-    @objc func replace(_ obj: NSObject) {
-        if let replacementText = obj.value(forKey: "_repl" + "Ttnemeca".reversed() + "ext") as? String {
-            if let indexedRange = obj.value(forKey: "_r" + "gna".reversed() + "e") as? IndexedRange {
-                replace(indexedRange, withText: replacementText)
-            }
-        }
-    }
-
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(copy(_:)) {
             if let selectedTextRange = selectedTextRange {
@@ -767,8 +755,6 @@ final class TextInputView: UIView, UITextInput {
         } else if action == #selector(paste(_:)) {
             return isEditing && UIPasteboard.general.hasStrings
         } else if action == #selector(selectAll(_:)) {
-            return true
-        } else if action == #selector(replace(_:)) {
             return true
         } else if action == NSSelectorFromString("replaceTextInSelectedHighlightedRange") {
             if let selectedRange = selectedRange, let highlightedRange = highlightedRange(for: selectedRange) {

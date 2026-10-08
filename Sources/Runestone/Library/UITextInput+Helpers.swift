@@ -1,23 +1,10 @@
 import UIKit
 
-#if compiler(>=5.9)
-
 @available(iOS 17, *)
-extension UITextInput where Self: NSObject {
+extension UIView {
+    /// The selection display interaction that UITextInteraction installs on this view.
+    /// Found through the public `interactions` array; no private API (Omnie-dev patch 0001).
     var sbs_textSelectionDisplayInteraction: UITextSelectionDisplayInteraction? {
-        let interactionAssistantKey = "int" + "ssAnoitcare".reversed() + "istant"
-        let selectionViewManagerKey: String = "les_".reversed() + "ection" + "reganaMweiV".reversed()
-        guard responds(to: Selector(interactionAssistantKey)) else {
-            return nil
-        }
-        guard let interactionAssistant = value(forKey: interactionAssistantKey) as? AnyObject else {
-            return nil
-        }
-        guard interactionAssistant.responds(to: Selector(selectionViewManagerKey)) else {
-            return nil
-        }
-        return interactionAssistant.value(forKey: selectionViewManagerKey) as? UITextSelectionDisplayInteraction
+        interactions.lazy.compactMap { $0 as? UITextSelectionDisplayInteraction }.first
     }
 }
-
-#endif

@@ -1,3 +1,5 @@
+> **This is `omnie-dev-editor-engine`**, the code-editor engine of [Omnie-dev](https://github.com/wckdboy/omnie-dev): a hard fork of [Runestone](https://github.com/simonbs/Runestone) by Simon B. Støvring, MIT-licensed like the original. The `upstream` branch mirrors Runestone exactly; `main` adds the patches listed in [PATCHES.md](PATCHES.md) (no private API, tree-sitter 0.26, scroll-performance fixes). Fixes worth sharing go upstream first. Everything below is Runestone's original README.
+
 ![](https://github.com/simonbs/Runestone/raw/main/Sources/Runestone/Documentation.docc/Resources/hero.png)
 
 ### 👋 Welcome to Runestone - a performant plain text editor for iOS with code editing features

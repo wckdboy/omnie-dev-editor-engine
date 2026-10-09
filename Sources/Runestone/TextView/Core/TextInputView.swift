@@ -677,6 +677,8 @@ final class TextInputView: UIView, UITextInput {
     }
     private var hasPendingFullLayout = false
     private let editMenuController = EditMenuController()
+    /// Items the host adds to the edit menu for a range (patch 0015).
+    var additionalEditMenuElements: ((NSRange) -> [UIMenuElement])?
     private var notifyInputDelegateAboutSelectionChangeInLayoutSubviews = false
     private var notifyDelegateAboutSelectionChangeInLayoutSubviews = false
     private var didCallPositionFromPositionInDirectionWithOffset = false
@@ -1649,7 +1651,11 @@ extension TextInputView {
 // MARK: - UIEditMenuInteraction
 extension TextInputView {
     func editMenu(for textRange: UITextRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
-        editMenuController.editMenu(for: textRange, suggestedActions: suggestedActions)
+        let menu = editMenuController.editMenu(for: textRange, suggestedActions: suggestedActions)
+        guard let provider = additionalEditMenuElements, let range = (textRange as? IndexedRange)?.range else { return menu }
+        let extra = provider(range)
+        guard !extra.isEmpty else { return menu }
+        return UIMenu(children: (menu?.children ?? suggestedActions) + [UIMenu(options: .displayInline, children: extra)])
     }
 
     func presentEditMenuForText(in range: NSRange) {

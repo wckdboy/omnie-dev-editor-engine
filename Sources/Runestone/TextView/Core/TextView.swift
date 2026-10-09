@@ -209,7 +209,7 @@ open class TextView: UIScrollView {
     }
     /// A custom input view to show instead of the system keyboard when the receiver becomes the first
     /// responder; nil shows the system keyboard. Omnie-dev patch 0008.
-    /// Items to add to the edit menu (long press, or a selection's menu) for the given range, after
+    /// Items to add to the edit menu (long press, or a selection's menu) for the given range, before
     /// the system's: "Go to Definition" and the like. Patch 0015.
     public var additionalEditMenuElements: ((NSRange) -> [UIMenuElement])? {
         get { textInputView.additionalEditMenuElements }

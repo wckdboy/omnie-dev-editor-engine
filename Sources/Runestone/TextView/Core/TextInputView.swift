@@ -1655,7 +1655,7 @@ extension TextInputView {
         guard let provider = additionalEditMenuElements, let range = (textRange as? IndexedRange)?.range else { return menu }
         let extra = provider(range)
         guard !extra.isEmpty else { return menu }
-        return UIMenu(children: (menu?.children ?? suggestedActions) + [UIMenu(options: .displayInline, children: extra)])
+        return UIMenu(children: [UIMenu(options: .displayInline, children: extra)] + (menu?.children ?? suggestedActions))
     }
 
     func presentEditMenuForText(in range: NSRange) {

@@ -7,7 +7,7 @@ let package = Package(
     name: "Runestone",
     defaultLocalization: "en",
     platforms: [
-        .iOS(.v14)
+        .iOS("18.0")  // Omnie-dev: raised from 14 for inline-prediction and Writing Tools traits
     ],
     products: [
         .library(name: "Runestone", targets: ["Runestone"])

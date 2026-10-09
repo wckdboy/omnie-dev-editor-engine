@@ -99,6 +99,10 @@ final class TextInputView: UIView, UITextInput {
                                                                 lineManager: lineManager,
                                                                 lineControllerStorage: lineControllerStorage)
     var autocorrectionType: UITextAutocorrectionType = .default
+    // Omnie-dev: code editors turn these off; with them on, UIKit re-tokenizes the surrounding
+    // sentence (ICU) after every change to feed predictions.
+    var inlinePredictionType: UITextInlinePredictionType = .default
+    var writingToolsBehavior: UIWritingToolsBehavior = .default
     var autocapitalizationType: UITextAutocapitalizationType = .sentences
     var smartQuotesType: UITextSmartQuotesType = .default
     var smartDashesType: UITextSmartDashesType = .default
@@ -561,6 +565,71 @@ final class TextInputView: UIView, UITextInput {
             layoutManager.layoutIfNeeded()
         }
     }
+    // MARK: Omnie-dev patch 0012: multi-cursor prototype
+    // The system UITextInput selection is the primary caret; these are the others. Typing and backspace
+    // apply at every caret (right to left, so earlier offsets stay valid), with one layout pass and one
+    // undo group. Marked text (IME) stays on the primary caret only.
+    var additionalCaretLocations: [Int] = [] {
+        didSet {
+            guard additionalCaretLocations != oldValue else { return }
+            layoutManager.additionalCaretLocations = additionalCaretLocations
+            layoutManager.layoutIfNeeded()
+        }
+    }
+
+    var additionalCaretColor: UIColor {
+        get { layoutManager.additionalCaretColor }
+        set { layoutManager.additionalCaretColor = newValue; layoutManager.setNeedsLayout(); layoutManager.layoutIfNeeded() }
+    }
+
+    private func editAtAllCarets(insert text: String, deletingBackward: Bool) -> Bool {
+        guard let primary = selectedRange, primary.length <= (deletingBackward ? 1 : 0) else { return false }
+        // Before deleteBackward UIKit may widen the primary selection to the character before the caret.
+        let primaryCaret = deletingBackward ? primary.upperBound : primary.location
+        let length = stringView.string.length
+        let carets = Array(Set(additionalCaretLocations + [primaryCaret])).filter { $0 >= 0 && $0 <= length }.sorted()
+        guard carets.count > 1 else { return false }
+        let insertedLength = (text as NSString).length
+        let lineChangeSet = LineChangeSet()
+        let textEditHelper = TextEditHelper(stringView: stringView, lineManager: lineManager, lineEndings: lineEndings)
+        for location in carets.reversed() {
+            let range = deletingBackward
+                ? NSRange(location: max(location - 1, 0), length: location > 0 ? 1 : 0)
+                : NSRange(location: location, length: 0)
+            if deletingBackward && range.length == 0 { continue }
+            let oldText = self.text(in: range) ?? ""
+            addUndoOperation(replacing: NSRange(location: range.location, length: deletingBackward ? 0 : insertedLength), withText: oldText)
+            let result = textEditHelper.replaceText(in: range, with: deletingBackward ? "" : text)
+            lineChangeSet.union(with: result.lineChangeSet)
+            lineChangeSet.union(with: languageMode.textDidChange(result.textChange))
+            layoutManager.shiftDecorations(byReplacing: range, newLength: deletingBackward ? 0 : insertedLength)
+        }
+        // Each caret moves by its own edit plus every edit before it.
+        var newLocations: [Int] = []
+        var delta = 0
+        for location in carets {
+            if deletingBackward {
+                if location > 0 { delta -= 1 }
+            } else {
+                delta += insertedLength
+            }
+            newLocations.append(location + delta)
+        }
+        let primaryIndex = carets.firstIndex(of: primaryCaret) ?? 0
+        _selectedRange = NSRange(location: newLocations[primaryIndex], length: 0)
+        var others = newLocations
+        others.remove(at: primaryIndex)
+        additionalCaretLocations = Array(Set(others).subtracting([newLocations[primaryIndex]])).sorted()
+        applyLineChangesToLayoutManager(lineChangeSet)
+        delegate?.textInputViewDidChange(self)
+        if !lineChangeSet.insertedLines.isEmpty || !lineChangeSet.removedLines.isEmpty {
+            delegate?.textInputViewDidInvalidateContentSize(self)
+        }
+        layoutIfNeeded()
+        delegate?.textInputViewDidChangeSelection(self)
+        return true
+    }
+
     var lineEndings: LineEnding = .lf
     private(set) var isRestoringPreviouslyDeletedText = false
 
@@ -710,6 +779,11 @@ final class TextInputView: UIView, UITextInput {
         // We will sometimes disable notifying the input delegate when the user enters Korean text.
         // This workaround is inspired by a dialog with Alexander Blach (@lextar), developer of Textastic.
         if notifyInputDelegateAboutSelectionChangeInLayoutSubviews {
+            // Omnie-dev patch 0013: announce the pending selection change once, then clear the flag.
+            // Left set, it re-announced on every later layout pass, i.e. after every keystroke, and
+            // each announcement made UIKit's keyboard state re-tokenize the surrounding sentence (ICU).
+            // UITextView doesn't announce caret moves caused by its own insertText either.
+            notifyInputDelegateAboutSelectionChangeInLayoutSubviews = false
             inputDelegate?.selectionWillChange(self)
             inputDelegate?.selectionDidChange(self)
         }
@@ -1091,6 +1165,10 @@ extension TextInputView {
 // MARK: - Editing
 extension TextInputView {
     func insertText(_ text: String) {
+        if !additionalCaretLocations.isEmpty && markedRange == nil
+            && editAtAllCarets(insert: prepareTextForInsertion(text), deletingBackward: false) {
+            return
+        }
         let preparedText = prepareTextForInsertion(text)
         isRestoringPreviouslyDeletedText = hasDeletedTextWithPendingLayoutSubviews
         hasDeletedTextWithPendingLayoutSubviews = false
@@ -1121,6 +1199,9 @@ extension TextInputView {
 
     func deleteBackward() {
         didCallDeleteBackward = true
+        if !additionalCaretLocations.isEmpty && markedRange == nil && editAtAllCarets(insert: "", deletingBackward: true) {
+            return
+        }
         guard let selectedRange = markedRange ?? selectedRange, selectedRange.length > 0 else {
             return
         }

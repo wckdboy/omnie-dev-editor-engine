@@ -120,6 +120,11 @@ final class LayoutManager {
         }
     }
     private var sortedDecorations: [Decoration] = []
+    /// Patch 0012: secondary carets, drawn in the foreground decoration view.
+    var additionalCaretLocations: [Int] = [] {
+        didSet { setNeedsLayout() }
+    }
+    var additionalCaretColor: UIColor = .systemBlue
     private let backgroundDecorationView = DecorationView()
     private let foregroundDecorationView = DecorationView()
     private let gutterDecorationView = DecorationView()
@@ -553,7 +558,7 @@ extension LayoutManager {
         foregroundDecorationView.frame = viewportFrame
         let gutterWidth = showLineNumbers ? gutterWidthService.gutterWidth : 0
         gutterDecorationView.frame = CGRect(x: 0, y: viewportFrame.minY, width: gutterWidth, height: viewportFrame.height)
-        guard !sortedDecorations.isEmpty, viewportFrame.width > 0, viewportFrame.height > 0,
+        guard !sortedDecorations.isEmpty || !additionalCaretLocations.isEmpty, viewportFrame.width > 0, viewportFrame.height > 0,
               let firstLine = lineManager.line(containingYOffset: insetViewport.minY) else {
             backgroundDecorationView.items = []
             foregroundDecorationView.items = []
@@ -610,6 +615,11 @@ extension LayoutManager {
                     if decoration.isBackground { background.append(item) } else { foreground.append(item) }
                 }
             }
+        }
+        for caretLocation in additionalCaretLocations where caretLocation >= visibleStart && caretLocation <= visibleEnd {
+            let caret = caretRectService.caretRect(at: caretLocation, allowMovingCaretToNextLineFragment: true)
+            let rect = CGRect(x: caret.minX - viewportFrame.minX, y: caret.minY - viewportFrame.minY, width: 2, height: caret.height)
+            foreground.append(DecorationDrawItem(rect: rect, style: .caret(additionalCaretColor)))
         }
         backgroundDecorationView.items = background
         foregroundDecorationView.items = foreground

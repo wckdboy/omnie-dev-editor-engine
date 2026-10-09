@@ -16,6 +16,8 @@ public struct Decoration: Hashable {
         case gutterBar(UIColor)
         /// A dot in the gutter on the range's first line (info diagnostics).
         case gutterDot(UIColor)
+        /// A caret bar (secondary carets in multi-cursor editing, patch 0012).
+        case caret(UIColor)
     }
 
     public var id: String
@@ -126,6 +128,9 @@ final class DecorationView: UIView {
             case .gutterDot(let color):
                 color.setFill()
                 UIBezierPath(ovalIn: item.rect).fill()
+            case .caret(let color):
+                color.setFill()
+                UIBezierPath(rect: item.rect).fill()
             }
         }
     }

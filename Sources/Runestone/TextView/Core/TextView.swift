@@ -62,6 +62,16 @@ open class TextView: UIScrollView {
             textInputView.theme = newValue
         }
     }
+    /// Inline predictions (iOS 17+). Code editors usually turn them off. Omnie-dev addition.
+    public var inlinePredictionType: UITextInlinePredictionType {
+        get { textInputView.inlinePredictionType }
+        set { textInputView.inlinePredictionType = newValue }
+    }
+    /// Writing Tools (iOS 18+). Code editors usually turn them off. Omnie-dev addition.
+    public var writingToolsBehavior: UIWritingToolsBehavior {
+        get { textInputView.writingToolsBehavior }
+        set { textInputView.writingToolsBehavior = newValue }
+    }
     /// The autocorrection style for the text view.
     public var autocorrectionType: UITextAutocorrectionType {
         get {
@@ -537,6 +547,20 @@ open class TextView: UIScrollView {
         }
     }
     /// Ranges in the text to be highlighted. The color defined by the background will be drawen behind the text.
+    /// Secondary carets for multi-cursor editing (Omnie-dev patch 0012, prototype). The selected range
+    /// is the primary caret. Typing and backspace apply at all carets; IME marked text stays on the
+    /// primary caret. Locations are UTF-16 offsets.
+    public var additionalCaretLocations: [Int] {
+        get { textInputView.additionalCaretLocations }
+        set { textInputView.additionalCaretLocations = newValue.sorted() }
+    }
+
+    /// The color of secondary carets.
+    public var additionalCaretColor: UIColor {
+        get { textInputView.additionalCaretColor }
+        set { textInputView.additionalCaretColor = newValue }
+    }
+
     /// Diagnostics, diff hunks and authorship marks, drawn above, below or beside the text without
     /// re-typesetting it. Ranges move with edits. Omnie-dev patch 0011.
     public var decorations: [Decoration] {

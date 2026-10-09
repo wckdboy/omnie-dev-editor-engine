@@ -547,6 +547,13 @@ open class TextView: UIScrollView {
         }
     }
     /// Ranges in the text to be highlighted. The color defined by the background will be drawen behind the text.
+    /// The editor's spoken name for VoiceOver, e.g. "Code editor, Sync.swift". The text view itself is a
+    /// container; its inner input view is the accessibility element. Omnie-dev patch 0014.
+    override public var accessibilityLabel: String? {
+        get { textInputView.accessibilityLabel }
+        set { textInputView.accessibilityLabel = newValue }
+    }
+
     /// Secondary carets for multi-cursor editing (Omnie-dev patch 0012, prototype). The selected range
     /// is the primary caret. Typing and backspace apply at all carets; IME marked text stays on the
     /// primary caret. Locations are UTF-16 offsets.

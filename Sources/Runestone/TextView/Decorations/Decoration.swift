@@ -23,11 +23,16 @@ public struct Decoration: Hashable {
     public var id: String
     public var range: NSRange
     public var style: Style
+    /// What VoiceOver says for this decoration ("Error: missing return", "Written by agent").
+    /// Decorations with a label are reachable through the "Diagnostics" rotor and are read with
+    /// their line. Patch 0014.
+    public var accessibilityLabel: String?
 
-    public init(id: String = UUID().uuidString, range: NSRange, style: Style) {
+    public init(id: String = UUID().uuidString, range: NSRange, style: Style, accessibilityLabel: String? = nil) {
         self.id = id
         self.range = range
         self.style = style
+        self.accessibilityLabel = accessibilityLabel
     }
 
     var isGutter: Bool {

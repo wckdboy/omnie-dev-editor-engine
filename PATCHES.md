@@ -12,5 +12,6 @@
 | 0006 | `RedBlackTree.location(of:)` and the location search use direct field access instead of `KeyPath` | Key paths were instantiated at runtime on every call in this hot path | Candidate for upstream |
 | 0007 | Incremental tree-sitter reparse off the main thread: edits apply to the tree on main, the reparse runs on a serial queue against an immutable text snapshot with its own parser, changed lines are re-highlighted when it returns; stale results are dropped. Layers with injections keep the synchronous path | Omnie-dev P0 criterion ("incremental parse off the main thread"). Spike, simulator: typing p95 28 → 13 ms with the on-screen keyboard, 7.2 ms without | Candidate for upstream (behind a flag) |
 | 0008 | Settable `TextView.inputView` | Custom input (accessory key rows) and measuring typing without the on-screen keyboard | Candidate for upstream |
+| 0009 | `layoutLinesInViewport` computes each line's y-position once instead of three times | Each computation walks the line tree through weak parent references; on the iPad Pro M5 typing p95 went 5.7 → 4.3 ms (three runs 4.3–4.5) and the worst keystroke 11.6 → 5.2 ms. A running-sum variant measured no further gain and was dropped | Candidate for upstream |
 
 Fork base: Runestone 0.5.2 (`592434a`, 25 Mar 2026).

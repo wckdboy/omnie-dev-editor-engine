@@ -405,9 +405,12 @@ extension LayoutManager {
             let oldLineHeight = lineController.lineHeight
             lineController.constrainingWidth = constrainingLineWidth
             lineController.prepareToDisplayString(in: lineLocalViewport, syntaxHighlightAsynchronously: true)
-            layoutLineNumberView(for: line)
-            // Layout line fragments ("sublines") in the line until we have filled the viewport.
+            // Omnie-dev patch 0009: a line's y-position depends only on the lines above it, so compute
+            // it once per line instead of three times. Each computation walks the line tree through
+            // weak parent references, which showed up in per-keystroke layout in device profiling.
             let lineYPosition = line.yPosition
+            layoutLineNumberView(for: line, lineYPosition: lineYPosition)
+            // Layout line fragments ("sublines") in the line until we have filled the viewport.
             let lineFragmentControllers = lineController.lineFragmentControllers(in: insetViewport)
             for lineFragmentController in lineFragmentControllers {
                 let lineFragment = lineFragmentController.lineFragment
@@ -429,7 +432,7 @@ extension LayoutManager {
             let stoppedGeneratingLineFragments = lineFragmentControllers.isEmpty
             let lineSize = CGSize(width: lineController.lineWidth, height: lineController.lineHeight)
             contentSizeService.setSize(of: lineController.line, to: lineSize)
-            let isSizingLineAboveTopEdge = line.yPosition < insetViewport.minY + textContainerInset.top
+            let isSizingLineAboveTopEdge = lineYPosition < insetViewport.minY + textContainerInset.top
             if isSizingLineAboveTopEdge && lineController.isFinishedTypesetting {
                 contentOffsetAdjustmentY += lineController.lineHeight - oldLineHeight
             }
@@ -458,7 +461,7 @@ extension LayoutManager {
         }
     }
 
-    private func layoutLineNumberView(for line: DocumentLineNode) {
+    private func layoutLineNumberView(for line: DocumentLineNode, lineYPosition: CGFloat) {
         let lineNumberView = lineNumberLabelReuseQueue.dequeueView(forKey: line.id)
         if lineNumberView.superview == nil {
             lineNumbersContainerView.addSubview(lineNumberView)
@@ -466,7 +469,7 @@ extension LayoutManager {
         let lineController = lineControllerStorage.getOrCreateLineController(for: line)
         let fontLineHeight = theme.lineNumberFont.lineHeight
         let xPosition = safeAreaInsets.left + gutterWidthService.gutterLeadingPadding
-        var yPosition = textContainerInset.top + line.yPosition
+        var yPosition = textContainerInset.top + lineYPosition
         if lineController.numberOfLineFragments > 1 {
             // There are more than one line fragments, so we align the line number at the top.
             yPosition += (fontLineHeight * lineHeightMultiplier - fontLineHeight) / 2

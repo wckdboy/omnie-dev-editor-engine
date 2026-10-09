@@ -537,6 +537,13 @@ open class TextView: UIScrollView {
         }
     }
     /// Ranges in the text to be highlighted. The color defined by the background will be drawen behind the text.
+    /// Diagnostics, diff hunks and authorship marks, drawn above, below or beside the text without
+    /// re-typesetting it. Ranges move with edits. Omnie-dev patch 0011.
+    public var decorations: [Decoration] {
+        get { textInputView.decorations }
+        set { textInputView.decorations = newValue }
+    }
+
     public var highlightedRanges: [HighlightedRange] {
         get {
             textInputView.highlightedRanges

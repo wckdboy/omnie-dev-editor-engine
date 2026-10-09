@@ -554,6 +554,13 @@ final class TextInputView: UIView, UITextInput {
     var viewHierarchyContainsCaret: Bool {
         textSelectionView?.subviews.count == 1
     }
+    var decorations: [Decoration] {
+        get { layoutManager.decorations }
+        set {
+            layoutManager.decorations = newValue
+            layoutManager.layoutIfNeeded()
+        }
+    }
     var lineEndings: LineEnding = .lf
     private(set) var isRestoringPreviouslyDeletedText = false
 
@@ -1257,6 +1264,7 @@ extension TextInputView {
         _selectedRange = NSRange(location: newRange.upperBound, length: 0)
         let textEditHelper = TextEditHelper(stringView: stringView, lineManager: lineManager, lineEndings: lineEndings)
         let textEditResult = textEditHelper.replaceText(in: range, with: newString)
+        layoutManager.shiftDecorations(byReplacing: range, newLength: nsNewString.length)
         let textChange = textEditResult.textChange
         let lineChangeSet = textEditResult.lineChangeSet
         let languageModeLineChangeSet = languageMode.textDidChange(textChange)

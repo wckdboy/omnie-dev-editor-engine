@@ -111,6 +111,18 @@ final class LayoutManager {
 
     // MARK: - Views
     let gutterContainerView = UIView()
+    // Patch 0011: decorations. Sorted by location; only those in the visible range are laid out.
+    var decorations: [Decoration] {
+        get { sortedDecorations }
+        set {
+            sortedDecorations = newValue.sorted { $0.range.location < $1.range.location }
+            setNeedsLayout()
+        }
+    }
+    private var sortedDecorations: [Decoration] = []
+    private let backgroundDecorationView = DecorationView()
+    private let foregroundDecorationView = DecorationView()
+    private let gutterDecorationView = DecorationView()
     private var lineFragmentViewReuseQueue = ViewReuseQueue<LineFragmentID, LineFragmentView>()
     private var lineNumberLabelReuseQueue = ViewReuseQueue<DocumentLineNodeID, LineNumberView>()
     private var visibleLineIDs: Set<DocumentLineNodeID> = []
@@ -294,6 +306,7 @@ extension LayoutManager {
             layoutGutter()
             layoutLineSelection()
             layoutLinesInViewport()
+            layoutDecorations()
             updateLineNumberColors()
             CATransaction.commit()
         }
@@ -397,6 +410,11 @@ extension LayoutManager {
         var appearedLineFragmentIDs: Set<LineFragmentID> = []
         var maxY = insetViewport.minY
         var contentOffsetAdjustmentY: CGFloat = 0
+        // Patch 0010: a line's y-position and row index each walk the line tree up through weak parent
+        // references (slow-path refcounting on every node). Only the first visible line asks the tree;
+        // each following line continues from the previous one: y + its just-updated height, row + 1.
+        var runningLineYPosition: CGFloat?
+        var runningLineIndex: Int?
         while let line = nextLine, maxY < insetViewport.maxY, constrainingLineWidth > 0 {
             appearedLineIDs.insert(line.id)
             // Prepare to line controller to display text.
@@ -408,8 +426,9 @@ extension LayoutManager {
             // Omnie-dev patch 0009: a line's y-position depends only on the lines above it, so compute
             // it once per line instead of three times. Each computation walks the line tree through
             // weak parent references, which showed up in per-keystroke layout in device profiling.
-            let lineYPosition = line.yPosition
-            layoutLineNumberView(for: line, lineYPosition: lineYPosition)
+            let lineYPosition = runningLineYPosition ?? line.yPosition
+            let lineIndex = runningLineIndex ?? line.index
+            layoutLineNumberView(for: line, lineIndex: lineIndex, lineYPosition: lineYPosition)
             // Layout line fragments ("sublines") in the line until we have filled the viewport.
             let lineFragmentControllers = lineController.lineFragmentControllers(in: insetViewport)
             for lineFragmentController in lineFragmentControllers {
@@ -432,12 +451,14 @@ extension LayoutManager {
             let stoppedGeneratingLineFragments = lineFragmentControllers.isEmpty
             let lineSize = CGSize(width: lineController.lineWidth, height: lineController.lineHeight)
             contentSizeService.setSize(of: lineController.line, to: lineSize)
+            runningLineYPosition = lineYPosition + line.data.lineHeight
             let isSizingLineAboveTopEdge = lineYPosition < insetViewport.minY + textContainerInset.top
             if isSizingLineAboveTopEdge && lineController.isFinishedTypesetting {
                 contentOffsetAdjustmentY += lineController.lineHeight - oldLineHeight
             }
-            if !stoppedGeneratingLineFragments && line.index < lineManager.lineCount - 1 {
-                nextLine = lineManager.line(atRow: line.index + 1)
+            if !stoppedGeneratingLineFragments && lineIndex < lineManager.lineCount - 1 {
+                nextLine = lineManager.line(atRow: lineIndex + 1)
+                runningLineIndex = lineIndex + 1
             } else {
                 nextLine = nil
             }
@@ -461,7 +482,7 @@ extension LayoutManager {
         }
     }
 
-    private func layoutLineNumberView(for line: DocumentLineNode, lineYPosition: CGFloat) {
+    private func layoutLineNumberView(for line: DocumentLineNode, lineIndex: Int, lineYPosition: CGFloat) {
         let lineNumberView = lineNumberLabelReuseQueue.dequeueView(forKey: line.id)
         if lineNumberView.superview == nil {
             lineNumbersContainerView.addSubview(lineNumberView)
@@ -477,10 +498,15 @@ extension LayoutManager {
             // There's a single line fragment, so we center the line number in the height of the line.
             yPosition += (lineController.lineHeight - fontLineHeight) / 2
         }
-        lineNumberView.text = "\(line.index + 1)"
-        lineNumberView.font = theme.lineNumberFont
-        lineNumberView.textColor = theme.lineNumberColor
-        lineNumberView.frame = CGRect(x: xPosition, y: yPosition, width: gutterWidthService.lineNumberWidth, height: fontLineHeight)
+        // Patch 0010: only touch the label when something changed; every set invalidates UILabel's layout.
+        let text = String(lineIndex + 1)
+        if lineNumberView.text != text { lineNumberView.text = text }
+        let font = theme.lineNumberFont
+        if lineNumberView.font != font { lineNumberView.font = font }
+        let color = theme.lineNumberColor
+        if lineNumberView.textColor != color { lineNumberView.textColor = color }
+        let frame = CGRect(x: xPosition, y: yPosition, width: gutterWidthService.lineNumberWidth, height: fontLineHeight)
+        if lineNumberView.frame != frame { lineNumberView.frame = frame }
     }
 
     private func layoutLineFragmentView(for lineFragmentController: LineFragmentController, lineYPosition: CGFloat, lineFragmentFrame: inout CGRect) {
@@ -512,6 +538,84 @@ extension LayoutManager {
         }
     }
 
+    /// Shifts decoration ranges across an edit so they stay attached to the same text.
+    func shiftDecorations(byReplacing editedRange: NSRange, newLength: Int) {
+        guard !sortedDecorations.isEmpty else { return }
+        // Shifting preserves order except where an edit swallowed a range's start; re-sort to be safe.
+        sortedDecorations = sortedDecorations
+            .map { $0.shifted(byReplacing: editedRange, newLength: newLength) }
+            .sorted { $0.range.location < $1.range.location }
+    }
+
+    private func layoutDecorations() {
+        let viewportFrame = viewport
+        backgroundDecorationView.frame = viewportFrame
+        foregroundDecorationView.frame = viewportFrame
+        let gutterWidth = showLineNumbers ? gutterWidthService.gutterWidth : 0
+        gutterDecorationView.frame = CGRect(x: 0, y: viewportFrame.minY, width: gutterWidth, height: viewportFrame.height)
+        guard !sortedDecorations.isEmpty, viewportFrame.width > 0, viewportFrame.height > 0,
+              let firstLine = lineManager.line(containingYOffset: insetViewport.minY) else {
+            backgroundDecorationView.items = []
+            foregroundDecorationView.items = []
+            gutterDecorationView.items = []
+            return
+        }
+        let lastLine = lineManager.line(containingYOffset: insetViewport.maxY) ?? lineManager.lastLine
+        let visibleStart = firstLine.location
+        let visibleEnd = lastLine.location + lastLine.data.totalLength
+        // First decoration that could reach the visible range: binary search on location, then step
+        // back over long decorations that start earlier (bounded by the list).
+        var low = 0, high = sortedDecorations.count
+        while low < high {
+            let mid = (low + high) / 2
+            if sortedDecorations[mid].range.location < visibleStart { low = mid + 1 } else { high = mid }
+        }
+        var startIndex = low
+        while startIndex > 0 && sortedDecorations[startIndex - 1].range.upperBound >= visibleStart { startIndex -= 1 }
+        var background: [DecorationDrawItem] = []
+        var foreground: [DecorationDrawItem] = []
+        var gutter: [DecorationDrawItem] = []
+        let length = stringView.string.length
+        var index = startIndex
+        while index < sortedDecorations.count {
+            let decoration = sortedDecorations[index]
+            index += 1
+            if decoration.range.location > visibleEnd { break }
+            if decoration.range.upperBound < visibleStart { continue }
+            let location = min(max(decoration.range.location, 0), length)
+            let range = NSRange(location: location, length: min(decoration.range.length, length - location))
+            if decoration.isGutter {
+                guard gutterWidth > 0 else { continue }
+                // Gutter marks span whole lines: from the first line's top to the last line's bottom.
+                guard let startLine = lineManager.line(containingCharacterAt: range.location),
+                      let endLine = lineManager.line(containingCharacterAt: max(range.location, range.upperBound - (range.length > 0 ? 1 : 0))) else { continue }
+                let top = startLine.yPosition + textContainerInset.top - viewportFrame.minY
+                let bottom = endLine.yPosition + endLine.data.lineHeight + textContainerInset.top - viewportFrame.minY
+                switch decoration.style {
+                case .gutterBar:
+                    gutter.append(DecorationDrawItem(rect: CGRect(x: gutterWidth - 3, y: top, width: 3, height: max(bottom - top, 2)),
+                                                     style: decoration.style))
+                case .gutterDot:
+                    let size: CGFloat = 5
+                    let lineHeight = startLine.data.lineHeight
+                    gutter.append(DecorationDrawItem(rect: CGRect(x: 3, y: top + (lineHeight - size) / 2, width: size, height: size),
+                                                     style: decoration.style))
+                default:
+                    break
+                }
+            } else if range.length > 0 {
+                for selectionRect in selectionRectService.selectionRects(in: range) {
+                    let rect = selectionRect.rect.offsetBy(dx: -viewportFrame.minX, dy: -viewportFrame.minY)
+                    let item = DecorationDrawItem(rect: rect, style: decoration.style)
+                    if decoration.isBackground { background.append(item) } else { foreground.append(item) }
+                }
+            }
+        }
+        backgroundDecorationView.items = background
+        foregroundDecorationView.items = foreground
+        gutterDecorationView.items = gutter
+    }
+
     private func setupViewHierarchy() {
         // Remove views from view hierarchy
         lineSelectionBackgroundView.removeFromSuperview()
@@ -523,12 +627,18 @@ extension LayoutManager {
         let allLineNumberKeys = lineFragmentViewReuseQueue.visibleViews.keys
         lineFragmentViewReuseQueue.enqueueViews(withKeys: Set(allLineNumberKeys))
         // Add views to view hierarchy
+        backgroundDecorationView.removeFromSuperview()
+        foregroundDecorationView.removeFromSuperview()
+        gutterDecorationView.removeFromSuperview()
         textInputView?.addSubview(lineSelectionBackgroundView)
+        textInputView?.addSubview(backgroundDecorationView)
         textInputView?.addSubview(linesContainerView)
+        textInputView?.addSubview(foregroundDecorationView)
         gutterParentView?.addSubview(gutterContainerView)
         gutterContainerView.addSubview(gutterBackgroundView)
         gutterContainerView.addSubview(gutterSelectionBackgroundView)
         gutterContainerView.addSubview(lineNumbersContainerView)
+        gutterContainerView.addSubview(gutterDecorationView)
     }
 
     private func updateShownViews() {

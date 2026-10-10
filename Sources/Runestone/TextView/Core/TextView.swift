@@ -582,6 +582,15 @@ open class TextView: UIScrollView {
         set { textInputView.decorations = newValue }
     }
 
+    /// Folded text (patch 0016): each range covers whole lines, from the first hidden line's start to
+    /// the end of the last one (its newline included). Those lines take no space and show no line
+    /// number. Ranges move with edits; an edit inside one removes it (unfolds), so read this back
+    /// after edits. Keep the caret out of folded lines (unfold when it would go in).
+    public var foldedRanges: [NSRange] {
+        get { textInputView.foldedRanges }
+        set { textInputView.foldedRanges = newValue }
+    }
+
     public var highlightedRanges: [HighlightedRange] {
         get {
             textInputView.highlightedRanges

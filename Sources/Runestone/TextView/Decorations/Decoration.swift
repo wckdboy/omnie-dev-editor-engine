@@ -18,6 +18,8 @@ public struct Decoration: Hashable {
         case gutterDot(UIColor)
         /// A caret bar (secondary carets in multi-cursor editing, patch 0012).
         case caret(UIColor)
+        /// A fold marker in the gutter on the range's first line: › folded, ⌄ open (patch 0016).
+        case gutterChevron(UIColor, folded: Bool)
     }
 
     public var id: String
@@ -37,7 +39,7 @@ public struct Decoration: Hashable {
 
     var isGutter: Bool {
         switch style {
-        case .gutterBar, .gutterDot: true
+        case .gutterBar, .gutterDot, .gutterChevron: true
         default: false
         }
     }
@@ -136,6 +138,23 @@ final class DecorationView: UIView {
             case .caret(let color):
                 color.setFill()
                 UIBezierPath(rect: item.rect).fill()
+            case .gutterChevron(let color, let folded):
+                let r = item.rect
+                let path = UIBezierPath()
+                if folded {
+                    path.move(to: CGPoint(x: r.minX + r.width * 0.3, y: r.minY))
+                    path.addLine(to: CGPoint(x: r.maxX - r.width * 0.2, y: r.midY))
+                    path.addLine(to: CGPoint(x: r.minX + r.width * 0.3, y: r.maxY))
+                } else {
+                    path.move(to: CGPoint(x: r.minX, y: r.minY + r.height * 0.3))
+                    path.addLine(to: CGPoint(x: r.midX, y: r.maxY - r.height * 0.2))
+                    path.addLine(to: CGPoint(x: r.maxX, y: r.minY + r.height * 0.3))
+                }
+                path.lineWidth = 1.5
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+                color.setStroke()
+                path.stroke()
             }
         }
     }

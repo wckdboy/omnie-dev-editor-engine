@@ -565,6 +565,17 @@ final class TextInputView: UIView, UITextInput {
             layoutManager.layoutIfNeeded()
         }
     }
+    /// Patch 0016: folded text (whole lines), see `TextView.foldedRanges`.
+    var foldedRanges: [NSRange] {
+        get { layoutManager.foldedRanges }
+        set {
+            guard newValue != layoutManager.foldedRanges else { return }
+            layoutManager.foldedRanges = newValue
+            layoutManager.layoutIfNeeded()
+            delegate?.textInputViewDidInvalidateContentSize(self)
+        }
+    }
+
     // MARK: Omnie-dev patch 0012: multi-cursor prototype
     // The system UITextInput selection is the primary caret; these are the others. Typing and backspace
     // apply at every caret (right to left, so earlier offsets stay valid), with one layout pass and one

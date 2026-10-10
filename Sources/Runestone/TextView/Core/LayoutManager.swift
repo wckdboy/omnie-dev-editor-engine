@@ -120,6 +120,18 @@ final class LayoutManager {
         }
     }
     private var sortedDecorations: [Decoration] = []
+    /// Patch 0016: folded text. Each range covers whole lines (from a line's start to the end of the
+    /// last hidden line); those rows get no height and aren't laid out. Ranges move with edits, and
+    /// an edit inside one unfolds it.
+    var foldedRanges: [NSRange] = [] {
+        didSet {
+            foldedRanges.sort { $0.location < $1.location }
+            hiddenRowsAreDirty = true
+            setNeedsLayout()
+        }
+    }
+    private(set) var hiddenRows = IndexSet()
+    private var hiddenRowsAreDirty = false
     /// Patch 0012: secondary carets, drawn in the foreground decoration view.
     var additionalCaretLocations: [Int] = [] {
         didSet { setNeedsLayout() }
@@ -308,6 +320,7 @@ extension LayoutManager {
             needsLayout = false
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            updateHiddenRowsIfNeeded()
             layoutGutter()
             layoutLineSelection()
             layoutLinesInViewport()
@@ -382,6 +395,7 @@ extension LayoutManager {
     }
 
     func layoutLines(toLocation location: Int) {
+        updateHiddenRowsIfNeeded()
         var nextLine: DocumentLineNode? = lineManager.firstLine
         let isLocationEndOfString = location >= stringView.string.length
         while let line = nextLine {
@@ -390,7 +404,8 @@ extension LayoutManager {
             let lineController = lineControllerStorage.getOrCreateLineController(for: line)
             lineController.constrainingWidth = constrainingLineWidth
             lineController.prepareToDisplayString(toLocation: endTypesettingLocation, syntaxHighlightAsynchronously: true)
-            let lineSize = CGSize(width: lineController.lineWidth, height: lineController.lineHeight)
+            let isHidden = !hiddenRows.isEmpty && hiddenRows.contains(line.index)
+            let lineSize = CGSize(width: lineController.lineWidth, height: isHidden ? 0 : lineController.lineHeight)
             contentSizeService.setSize(of: lineController.line, to: lineSize)
             let lineEndLocation = lineLocation + line.data.length
             if ((lineEndLocation < location) || (lineLocation == location && !isLocationEndOfString)) && line.index < lineManager.lineCount - 1 {
@@ -421,6 +436,20 @@ extension LayoutManager {
         var runningLineYPosition: CGFloat?
         var runningLineIndex: Int?
         while let line = nextLine, maxY < insetViewport.maxY, constrainingLineWidth > 0 {
+            // Patch 0016: a folded row has no height and nothing on screen; go on to the next.
+            if !hiddenRows.isEmpty {
+                let row = runningLineIndex ?? line.index
+                if hiddenRows.contains(row) {
+                    runningLineYPosition = (runningLineYPosition ?? line.yPosition) + line.data.lineHeight
+                    if row < lineManager.lineCount - 1 {
+                        nextLine = lineManager.line(atRow: row + 1)
+                        runningLineIndex = row + 1
+                    } else {
+                        nextLine = nil
+                    }
+                    continue
+                }
+            }
             appearedLineIDs.insert(line.id)
             // Prepare to line controller to display text.
             let lineLocalViewport = CGRect(x: 0, y: maxY, width: insetViewport.width, height: insetViewport.maxY - maxY)
@@ -545,11 +574,54 @@ extension LayoutManager {
 
     /// Shifts decoration ranges across an edit so they stay attached to the same text.
     func shiftDecorations(byReplacing editedRange: NSRange, newLength: Int) {
+        shiftFolds(byReplacing: editedRange, newLength: newLength)
         guard !sortedDecorations.isEmpty else { return }
         // Shifting preserves order except where an edit swallowed a range's start; re-sort to be safe.
         sortedDecorations = sortedDecorations
             .map { $0.shifted(byReplacing: editedRange, newLength: newLength) }
             .sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Patch 0016: folds after an edit. One the edit touches is gone (unfolded, as VS Code does);
+    /// the rest move with the text.
+    private func shiftFolds(byReplacing editedRange: NSRange, newLength: Int) {
+        guard !foldedRanges.isEmpty else { return }
+        let delta = newLength - editedRange.length
+        var kept: [NSRange] = []
+        for fold in foldedRanges {
+            let touches = editedRange.location < fold.upperBound && editedRange.upperBound > fold.location
+                || (editedRange.length == 0 && editedRange.location > fold.location && editedRange.location < fold.upperBound)
+            if touches { continue }
+            var moved = fold
+            if fold.location >= editedRange.upperBound { moved.location += delta }
+            kept.append(moved)
+        }
+        // Rows are recomputed on the next layout either way: lines may have been added or removed.
+        foldedRanges = kept
+    }
+
+    /// The rows the folds hide, with their heights zeroed (and restored when they show again).
+    func updateHiddenRowsIfNeeded() {
+        guard hiddenRowsAreDirty else { return }
+        hiddenRowsAreDirty = false
+        var rows = IndexSet()
+        let length = stringView.string.length
+        for fold in foldedRanges where fold.length > 0 && fold.location < length {
+            guard let first = lineManager.line(containingCharacterAt: fold.location),
+                  let last = lineManager.line(containingCharacterAt: min(length - 1, max(fold.location, fold.upperBound - 1))) else { continue }
+            let firstRow = first.index, lastRow = last.index
+            if lastRow >= firstRow { rows.insert(integersIn: firstRow...lastRow) }
+        }
+        let shown = hiddenRows.subtracting(rows)
+        for row in rows where row < lineManager.lineCount {
+            contentSizeService.setHeight(of: lineManager.line(atRow: row), to: 0)
+        }
+        for row in shown where row < lineManager.lineCount {
+            let line = lineManager.line(atRow: row)
+            let height = lineControllerStorage[line.id]?.lineHeight ?? lineManager.estimatedLineHeight
+            contentSizeService.setHeight(of: line, to: height)
+        }
+        hiddenRows = rows
     }
 
     private func layoutDecorations() {
@@ -604,6 +676,12 @@ extension LayoutManager {
                     let size: CGFloat = 5
                     let lineHeight = startLine.data.lineHeight
                     gutter.append(DecorationDrawItem(rect: CGRect(x: 3, y: top + (lineHeight - size) / 2, width: size, height: size),
+                                                     style: decoration.style))
+                case .gutterChevron:
+                    // Patch 0016: a fold marker between the line numbers and the text, on the first line.
+                    let size: CGFloat = 9
+                    let lineHeight = min(startLine.data.lineHeight, theme.font.lineHeight * lineHeightMultiplier)
+                    gutter.append(DecorationDrawItem(rect: CGRect(x: gutterWidth - size - 4, y: top + (lineHeight - size) / 2, width: size, height: size),
                                                      style: decoration.style))
                 default:
                     break

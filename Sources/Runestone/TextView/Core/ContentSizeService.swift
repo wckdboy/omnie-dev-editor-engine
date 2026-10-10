@@ -137,6 +137,13 @@ final class ContentSizeService {
         }
     }
 
+    /// Patch 0016: a folded line's height (0) or its height when it shows again, width untouched.
+    func setHeight(of line: DocumentLineNode, to height: CGFloat) {
+        if lineManager.setHeight(of: line, to: height) {
+            _totalLinesHeight = nil
+        }
+    }
+
     func setSize(of line: DocumentLineNode, to newSize: CGSize) {
         let lineWidth = newSize.width
         if lineWidths[line.id] != lineWidth {

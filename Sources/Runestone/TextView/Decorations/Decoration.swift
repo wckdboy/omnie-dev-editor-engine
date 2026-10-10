@@ -20,6 +20,9 @@ public struct Decoration: Hashable {
         case caret(UIColor)
         /// A fold marker in the gutter on the range's first line: › folded, ⌄ open (patch 0016).
         case gutterChevron(UIColor, folded: Bool)
+        /// "⋯" in a rounded box just after the range's location (the end of a folded block's first
+        /// line), marking hidden lines (patch 0016).
+        case foldPlaceholder(UIColor)
     }
 
     public var id: String
@@ -138,6 +141,16 @@ final class DecorationView: UIView {
             case .caret(let color):
                 color.setFill()
                 UIBezierPath(rect: item.rect).fill()
+            case .foldPlaceholder(let color):
+                let box = UIBezierPath(roundedRect: item.rect, cornerRadius: item.rect.height / 3)
+                color.withAlphaComponent(0.18).setFill()
+                box.fill()
+                color.setFill()
+                let dot: CGFloat = 2.4
+                for i in -1...1 {
+                    let center = CGPoint(x: item.rect.midX + CGFloat(i) * dot * 2.2, y: item.rect.midY)
+                    UIBezierPath(ovalIn: CGRect(x: center.x - dot / 2, y: center.y - dot / 2, width: dot, height: dot)).fill()
+                }
             case .gutterChevron(let color, let folded):
                 let r = item.rect
                 let path = UIBezierPath()

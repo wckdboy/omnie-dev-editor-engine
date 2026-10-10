@@ -681,11 +681,17 @@ extension LayoutManager {
                     // Patch 0016: a fold marker between the line numbers and the text, on the first line.
                     let size: CGFloat = 9
                     let lineHeight = min(startLine.data.lineHeight, theme.font.lineHeight * lineHeightMultiplier)
-                    gutter.append(DecorationDrawItem(rect: CGRect(x: gutterWidth - size - 4, y: top + (lineHeight - size) / 2, width: size, height: size),
+                    // In the gutter's trailing padding, left of where gutter bars go.
+                    gutter.append(DecorationDrawItem(rect: CGRect(x: gutterWidth - size - 5, y: top + (lineHeight - size) / 2, width: size, height: size),
                                                      style: decoration.style))
                 default:
                     break
                 }
+            } else if case .foldPlaceholder = decoration.style {
+                let caret = caretRectService.caretRect(at: range.location, allowMovingCaretToNextLineFragment: false)
+                let height = caret.height * 0.8
+                let rect = CGRect(x: caret.maxX + 6 - viewportFrame.minX, y: caret.midY - height / 2 - viewportFrame.minY, width: 24, height: height)
+                foreground.append(DecorationDrawItem(rect: rect, style: decoration.style))
             } else if range.length > 0 {
                 for selectionRect in selectionRectService.selectionRects(in: range) {
                     let rect = selectionRect.rect.offsetBy(dx: -viewportFrame.minX, dy: -viewportFrame.minY)

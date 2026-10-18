@@ -121,7 +121,8 @@ private extension TreeSitterIndentController {
         var workingNode: TreeSitterNode? = node
         while let node = workingNode, node.startPoint.row == caretPosition.row {
             if let type = node.type, indentationScopes.outdent.contains(type) {
-                if node.startPoint.column >= caretPosition.column {
+                // Patch 0020: the tree's columns are bytes (UTF-16LE); the caret's is UTF-16.
+                if LinePosition(node.startPoint).column >= caretPosition.column {
                     return node
                 }
             }

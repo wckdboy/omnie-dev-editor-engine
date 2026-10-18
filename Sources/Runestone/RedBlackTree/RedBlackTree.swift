@@ -273,6 +273,32 @@ final class RedBlackTree<NodeID: RedBlackTreeNodeID, NodeValue: RedBlackTreeNode
         }
     }
 
+    /// Patch 0018: recomputes every node's totals bottom-up, for a batch of nodes changed directly.
+    /// One pass over the tree instead of walking each changed node's ancestors.
+    func recalculateTotals() {
+        guard root != nil else { return }
+        recalculateTotals(of: root)
+    }
+
+    private func recalculateTotals(of node: Node?) {
+        guard let node else { return }
+        recalculateTotals(of: node.left)
+        recalculateTotals(of: node.right)
+        var totalCount = 1
+        var totalValue = node.value
+        if let leftNode = node.left {
+            totalCount += leftNode.nodeTotalCount
+            totalValue += leftNode.nodeTotalValue
+        }
+        if let rightNode = node.right {
+            totalCount += rightNode.nodeTotalCount
+            totalValue += rightNode.nodeTotalValue
+        }
+        node.nodeTotalCount = totalCount
+        node.nodeTotalValue = totalValue
+        _ = childrenUpdater?.updateAfterChangingChildren(of: node)
+    }
+
     func searchRange(_ range: ClosedRange<NodeValue>) -> [RedBlackTreeSearchMatch<NodeID, NodeValue, NodeData>] {
         let query = ClosedRangeValueSearchQuery<NodeID, NodeValue, NodeData>(range: range)
         return search(using: query)

@@ -246,6 +246,16 @@ final class LineManager {
         }
     }
 
+    /// Patch 0018: a height change that leaves the tree's totals for `recalculateTotals()` to fix
+    /// once, so a batch of thousands of lines doesn't walk the ancestors once per line.
+    func setHeightWithoutUpdatingTotals(of line: DocumentLineNode, to newHeight: CGFloat) {
+        line.data.lineHeight = newHeight
+    }
+
+    func recalculateTotals() {
+        documentLineTree.recalculateTotals()
+    }
+
     func lines(in range: NSRange) -> [DocumentLineNode] {
         guard let firstLine = line(containingCharacterAt: range.location) else {
             return []

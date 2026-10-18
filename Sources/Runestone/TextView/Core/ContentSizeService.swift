@@ -144,6 +144,16 @@ final class ContentSizeService {
         }
     }
 
+    /// Patch 0018: applies many height changes at once, recomputing the tree's totals in one pass.
+    func setHeights(_ changes: [(line: DocumentLineNode, height: CGFloat)]) {
+        guard !changes.isEmpty else { return }
+        for change in changes {
+            lineManager.setHeightWithoutUpdatingTotals(of: change.line, to: change.height)
+        }
+        lineManager.recalculateTotals()
+        _totalLinesHeight = nil
+    }
+
     func setSize(of line: DocumentLineNode, to newSize: CGSize) {
         let lineWidth = newSize.width
         if lineWidths[line.id] != lineWidth {

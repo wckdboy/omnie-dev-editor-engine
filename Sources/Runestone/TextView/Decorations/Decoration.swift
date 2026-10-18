@@ -20,6 +20,8 @@ public struct Decoration: Hashable {
         case caret(UIColor)
         /// A selection highlight behind the text (secondary selections, patch 0019).
         case selection(UIColor)
+        /// A hairline at an indentation level, or the ruler column (patch 0021).
+        case indentGuide(UIColor)
         /// A fold marker in the gutter on the range's first line: › folded, ⌄ open (patch 0016).
         case gutterChevron(UIColor, folded: Bool)
         /// "⋯" in a rounded box just after the range's location (the end of a folded block's first
@@ -51,7 +53,7 @@ public struct Decoration: Hashable {
 
     var isBackground: Bool {
         switch style {
-        case .background, .selection: true
+        case .background, .selection, .indentGuide: true
         default: false
         }
     }
@@ -148,6 +150,9 @@ final class DecorationView: UIView {
             case .selection(let color):
                 color.setFill()
                 UIBezierPath(roundedRect: item.rect, cornerRadius: 2).fill()
+            case .indentGuide(let color):
+                color.setFill()
+                UIBezierPath(rect: item.rect).fill()
             case .foldPlaceholder(let color):
                 let box = UIBezierPath(roundedRect: item.rect, cornerRadius: item.rect.height / 3)
                 color.withAlphaComponent(0.18).setFill()

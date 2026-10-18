@@ -288,11 +288,43 @@ final class TextInputView: UIView, UITextInput {
         didSet {
             if indentStrategy != oldValue {
                 indentController.indentStrategy = indentStrategy
+                updateIndentGuideGeometry()
                 layoutManager.setNeedsLayout()
                 setNeedsLayout()
                 layoutIfNeeded()
             }
         }
+    }
+
+    /// Patch 0021: a hairline at each level of a line's indentation.
+    var showIndentGuides: Bool {
+        get { invisibleCharacterConfiguration.showIndentGuides }
+        set {
+            guard newValue != invisibleCharacterConfiguration.showIndentGuides else { return }
+            invisibleCharacterConfiguration.showIndentGuides = newValue
+            layoutManager.setNeedsLayout()
+            setNeedsLayout()
+            layoutIfNeeded()
+        }
+    }
+
+    /// Patch 0021: a column guide (the "ruler") at this 1-based column; 0 turns it off.
+    var rulerColumn: Int {
+        get { invisibleCharacterConfiguration.rulerColumn }
+        set {
+            guard newValue != invisibleCharacterConfiguration.rulerColumn else { return }
+            invisibleCharacterConfiguration.rulerColumn = newValue
+            layoutManager.setNeedsLayout()
+            setNeedsLayout()
+            layoutIfNeeded()
+        }
+    }
+
+    /// The indent guide geometry follows the indent strategy (its tab width and tab length).
+    private func updateIndentGuideGeometry() {
+        layoutManager.indentGuideWidth = indentController.tabWidth
+        layoutManager.indentTabLength = max(indentStrategy.tabLength, 1)
+        layoutManager.setNeedsLayout()
     }
     var gutterLeadingPadding: CGFloat = 3 {
         didSet {
@@ -1832,6 +1864,7 @@ extension TextInputView: IndentControllerDelegate {
     }
 
     func indentControllerDidUpdateTabWidth(_ controller: IndentController) {
+        updateIndentGuideGeometry()
         invalidateLines()
     }
 }

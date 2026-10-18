@@ -588,6 +588,18 @@ open class TextView: UIScrollView {
         set { textInputView.additionalSelectionColor = newValue }
     }
 
+    /// Patch 0021: a hairline at each level of a line's indentation.
+    public var showIndentGuides: Bool {
+        get { textInputView.showIndentGuides }
+        set { textInputView.showIndentGuides = newValue }
+    }
+
+    /// Patch 0021: a column guide (the "ruler") at this 1-based column; 0 turns it off.
+    public var rulerColumn: Int {
+        get { textInputView.rulerColumn }
+        set { textInputView.rulerColumn = newValue }
+    }
+
     /// Diagnostics, diff hunks and authorship marks, drawn above, below or beside the text without
     /// re-typesetting it. Ranges move with edits. Omnie-dev patch 0011.
     public var decorations: [Decoration] {

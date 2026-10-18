@@ -27,6 +27,9 @@ final class InvisibleCharacterConfiguration {
             }
         }
     }
+    /// Patch 0021: a hairline at each level of a line's indentation, and a column guide (the "ruler").
+    var showIndentGuides = false
+    var rulerColumn = 0
     var tabSymbol = "\u{25b8}"
     var spaceSymbol = "\u{00b7}"
     var nonBreakingSpaceSymbol = "\u{00b7}"

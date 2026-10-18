@@ -139,6 +139,40 @@ final class LayoutManager {
     }
     var additionalCaretColor: UIColor = .systemBlue
     var additionalSelectionColor: UIColor = UIColor.systemBlue.withAlphaComponent(0.25)
+    /// Patch 0021: indent guide geometry — points per indent level and columns per level — set by the
+    /// text input view from its indent strategy, and the guides collected for the visible lines.
+    var indentGuideWidth: CGFloat = 0
+    var indentTabLength: Int = 2
+    private var indentGuideItems: [DecorationDrawItem] = []
+
+    /// Patch 0021: a hairline at each level of a line's indentation, and at the ruler column.
+    private func appendIndentGuides(for line: DocumentLineNode, yPosition: CGFloat, height: CGFloat) {
+        let configuration = invisibleCharacterConfiguration
+        guard configuration.showIndentGuides || configuration.rulerColumn > 0, indentGuideWidth > 0, height > 0 else { return }
+        let columnWidth = indentGuideWidth / CGFloat(max(indentTabLength, 1))
+        let color = configuration.textColor.withAlphaComponent(0.35)
+        func item(_ column: CGFloat) -> DecorationDrawItem {
+            DecorationDrawItem(rect: CGRect(x: column - viewport.minX, y: yPosition - viewport.minY, width: 1, height: height),
+                               style: .indentGuide(color))
+        }
+        if configuration.showIndentGuides {
+            let text = stringView.substring(in: NSRange(location: line.location, length: line.data.totalLength)) ?? ""
+            var columns = 0
+            for character in text {
+                if character == " " { columns += 1 }
+                else if character == "\t" { columns += indentTabLength - (columns % indentTabLength) }
+                else { break }
+            }
+            var column = indentTabLength
+            while column <= columns {
+                indentGuideItems.append(item(CGFloat(column) * columnWidth))
+                column += indentTabLength
+            }
+        }
+        if configuration.rulerColumn > 0 {
+            indentGuideItems.append(item(CGFloat(configuration.rulerColumn) * columnWidth))
+        }
+    }
     private let backgroundDecorationView = DecorationView()
     private let foregroundDecorationView = DecorationView()
     private let gutterDecorationView = DecorationView()
@@ -426,6 +460,7 @@ extension LayoutManager {
         }
         let oldVisibleLineIDs = visibleLineIDs
         let oldVisibleLineFragmentIDs = Set(lineFragmentViewReuseQueue.visibleViews.keys)
+        indentGuideItems = []
         // Layout lines until we have filled the viewport.
         var nextLine = lineManager.line(containingYOffset: insetViewport.minY)
         var appearedLineIDs: Set<DocumentLineNodeID> = []
@@ -487,6 +522,7 @@ extension LayoutManager {
             let stoppedGeneratingLineFragments = lineFragmentControllers.isEmpty
             let lineSize = CGSize(width: lineController.lineWidth, height: lineController.lineHeight)
             contentSizeService.setSize(of: lineController.line, to: lineSize)
+            appendIndentGuides(for: lineController.line, yPosition: lineYPosition, height: lineController.lineHeight)
             runningLineYPosition = lineYPosition + line.data.lineHeight
             let isSizingLineAboveTopEdge = lineYPosition < insetViewport.minY + textContainerInset.top
             if isSizingLineAboveTopEdge && lineController.isFinishedTypesetting {
@@ -637,7 +673,8 @@ extension LayoutManager {
         foregroundDecorationView.frame = viewportFrame
         let gutterWidth = showLineNumbers ? gutterWidthService.gutterWidth : 0
         gutterDecorationView.frame = CGRect(x: 0, y: viewportFrame.minY, width: gutterWidth, height: viewportFrame.height)
-        guard !sortedDecorations.isEmpty || !additionalSelections.isEmpty, viewportFrame.width > 0, viewportFrame.height > 0,
+        guard !sortedDecorations.isEmpty || !additionalSelections.isEmpty || !indentGuideItems.isEmpty,
+              viewportFrame.width > 0, viewportFrame.height > 0,
               let firstLine = lineManager.line(containingYOffset: insetViewport.minY) else {
             backgroundDecorationView.items = []
             foregroundDecorationView.items = []
@@ -720,6 +757,7 @@ extension LayoutManager {
                 }
             }
         }
+        background.append(contentsOf: indentGuideItems)
         backgroundDecorationView.items = background
         foregroundDecorationView.items = foreground
         gutterDecorationView.items = gutter

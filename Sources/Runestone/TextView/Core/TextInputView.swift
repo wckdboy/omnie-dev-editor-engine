@@ -576,16 +576,28 @@ final class TextInputView: UIView, UITextInput {
         }
     }
 
-    // MARK: Omnie-dev patch 0012: multi-cursor prototype
-    // The system UITextInput selection is the primary caret; these are the others. Typing and backspace
-    // apply at every caret (right to left, so earlier offsets stay valid), with one layout pass and one
-    // undo group. Marked text (IME) stays on the primary caret only.
-    var additionalCaretLocations: [Int] = [] {
+    // MARK: Omnie-dev patch 0012/0019: multi-selection
+    // The system UITextInput selection is the primary; these are the others. A selection may have a
+    // length (a highlighted occurrence) or be a caret. Typing and backspace apply at every selection,
+    // right to left, with one layout pass and one undo group. Marked text (IME) stays on the primary.
+    var additionalSelections: [NSRange] = [] {
         didSet {
-            guard additionalCaretLocations != oldValue else { return }
-            layoutManager.additionalCaretLocations = additionalCaretLocations
+            guard additionalSelections != oldValue else { return }
+            layoutManager.additionalSelections = additionalSelections
             layoutManager.layoutIfNeeded()
         }
+    }
+
+    /// Every selection, the primary first.
+    var selections: [NSRange] {
+        get { [selectedRange ?? NSRange(location: 0, length: 0)] + additionalSelections }
+        set { setSelections(newValue) }
+    }
+
+    /// The carets among the secondary selections (patch 0012 compatibility).
+    var additionalCaretLocations: [Int] {
+        get { additionalSelections.filter { $0.length == 0 }.map(\.location) }
+        set { additionalSelections = Array(Set(newValue)).sorted().map { NSRange(location: $0, length: 0) } }
     }
 
     var additionalCaretColor: UIColor {
@@ -593,44 +605,97 @@ final class TextInputView: UIView, UITextInput {
         set { layoutManager.additionalCaretColor = newValue; layoutManager.setNeedsLayout(); layoutManager.layoutIfNeeded() }
     }
 
-    private func editAtAllCarets(insert text: String, deletingBackward: Bool) -> Bool {
-        guard let primary = selectedRange, primary.length <= (deletingBackward ? 1 : 0) else { return false }
-        // Before deleteBackward UIKit may widen the primary selection to the character before the caret.
-        let primaryCaret = deletingBackward ? primary.upperBound : primary.location
+    var additionalSelectionColor: UIColor {
+        get { layoutManager.additionalSelectionColor }
+        set { layoutManager.additionalSelectionColor = newValue; layoutManager.setNeedsLayout(); layoutManager.layoutIfNeeded() }
+    }
+
+    /// Sets every selection at once: the first is the primary, the rest secondary. Overlapping ones
+    /// are merged, and one selection-change notification is sent for the whole set.
+    func setSelections(_ ranges: [NSRange]) {
         let length = stringView.string.length
-        let carets = Array(Set(additionalCaretLocations + [primaryCaret])).filter { $0 >= 0 && $0 <= length }.sorted()
-        guard carets.count > 1 else { return false }
+        var clamped: [NSRange] = []
+        for range in ranges {
+            let start = min(max(range.location, 0), length)
+            let end = min(max(range.upperBound, start), length)
+            clamped.append(NSRange(location: start, length: end - start))
+        }
+        guard let primary = clamped.first else {
+            selectedRange = NSRange(location: length, length: 0)
+            additionalSelections = []
+            return
+        }
+        let secondary = mergedSecondaries(Array(clamped.dropFirst()), primary: primary)
+        _selectedRange = primary
+        additionalSelections = secondary
+        delegate?.textInputViewDidChangeSelection(self)
+    }
+
+    /// Sorts the secondary selections, merges ones that overlap each other, and drops those that
+    /// overlap the primary.
+    private func mergedSecondaries(_ ranges: [NSRange], primary: NSRange) -> [NSRange] {
+        var result: [NSRange] = []
+        for range in ranges.sorted(by: { $0.location < $1.location }) {
+            if rangesOverlap(range, primary) { continue }
+            if let last = result.last, rangesOverlap(range, last) {
+                let end = max(last.upperBound, range.upperBound)
+                result[result.count - 1] = NSRange(location: last.location, length: end - last.location)
+            } else {
+                result.append(range)
+            }
+        }
+        return result
+    }
+
+    private func rangesOverlap(_ a: NSRange, _ b: NSRange) -> Bool {
+        if a.length == 0 && b.length == 0 { return a.location == b.location }
+        if a.length == 0 { return a.location > b.location && a.location < b.upperBound }
+        if b.length == 0 { return b.location > a.location && b.location < a.upperBound }
+        return NSIntersectionRange(a, b).length > 0
+    }
+
+    /// Typing or backspace at every selection. Each edit is one undo step, and the selections move by
+    /// the edits before them.
+    private func editAtAllSelections(insert text: String, deletingBackward: Bool) -> Bool {
+        guard let primary = selectedRange else { return false }
+        var ranges = [primary] + additionalSelections
+        guard ranges.count > 1 else { return false }
+        if deletingBackward {
+            ranges = ranges.map { range in
+                range.length > 0 ? range : NSRange(location: max(range.location - 1, 0), length: range.location > 0 ? 1 : 0)
+            }
+        }
+        guard ranges.count > 1 else { return false }
         let insertedLength = (text as NSString).length
+        let newLength = deletingBackward ? 0 : insertedLength
         let lineChangeSet = LineChangeSet()
         let textEditHelper = TextEditHelper(stringView: stringView, lineManager: lineManager, lineEndings: lineEndings)
-        for location in carets.reversed() {
-            let range = deletingBackward
-                ? NSRange(location: max(location - 1, 0), length: location > 0 ? 1 : 0)
-                : NSRange(location: location, length: 0)
-            if deletingBackward && range.length == 0 { continue }
+        for (_, range) in ranges.enumerated().sorted(by: { $0.element.location > $1.element.location }) {
+            // A caret at the very start has nothing to delete.
+            guard !(deletingBackward && range.length == 0) else { continue }
             let oldText = self.text(in: range) ?? ""
             addUndoOperation(replacing: NSRange(location: range.location, length: deletingBackward ? 0 : insertedLength), withText: oldText)
             let result = textEditHelper.replaceText(in: range, with: deletingBackward ? "" : text)
             lineChangeSet.union(with: result.lineChangeSet)
             lineChangeSet.union(with: languageMode.textDidChange(result.textChange))
-            layoutManager.shiftDecorations(byReplacing: range, newLength: deletingBackward ? 0 : insertedLength)
+            layoutManager.shiftDecorations(byReplacing: range, newLength: newLength)
         }
-        // Each caret moves by its own edit plus every edit before it.
-        var newLocations: [Int] = []
+        // Each selection moves by the edits before it; typing leaves a caret after the new text.
+        var movedByIndex: [Int: NSRange] = [:]
         var delta = 0
-        for location in carets {
+        for (index, range) in ranges.enumerated().sorted(by: { $0.element.location < $1.element.location }) {
             if deletingBackward {
-                if location > 0 { delta -= 1 }
+                movedByIndex[index] = NSRange(location: range.location + delta, length: 0)
+                delta -= range.length
             } else {
-                delta += insertedLength
+                movedByIndex[index] = NSRange(location: range.location + delta + insertedLength, length: 0)
+                delta += insertedLength - range.length
             }
-            newLocations.append(location + delta)
         }
-        let primaryIndex = carets.firstIndex(of: primaryCaret) ?? 0
-        _selectedRange = NSRange(location: newLocations[primaryIndex], length: 0)
-        var others = newLocations
-        others.remove(at: primaryIndex)
-        additionalCaretLocations = Array(Set(others).subtracting([newLocations[primaryIndex]])).sorted()
+        let movedPrimary = movedByIndex[0] ?? NSRange(location: 0, length: 0)
+        let movedSecondaries = (1..<ranges.count).compactMap { movedByIndex[$0] }
+        _selectedRange = movedPrimary
+        additionalSelections = mergedSecondaries(movedSecondaries, primary: movedPrimary)
         applyLineChangesToLayoutManager(lineChangeSet)
         delegate?.textInputViewDidChange(self)
         if !lineChangeSet.insertedLines.isEmpty || !lineChangeSet.removedLines.isEmpty {
@@ -639,6 +704,21 @@ final class TextInputView: UIView, UITextInput {
         layoutIfNeeded()
         delegate?.textInputViewDidChangeSelection(self)
         return true
+    }
+
+    /// Patch 0019: moves secondary selections with an ordinary edit (one that isn't at every
+    /// selection), dropping any the edit swallowed.
+    private func shiftSelections(byReplacing editedRange: NSRange, newLength: Int) {
+        guard !additionalSelections.isEmpty else { return }
+        let delta = newLength - editedRange.length
+        additionalSelections = additionalSelections.compactMap { range in
+            if editedRange.upperBound <= range.location {
+                return NSRange(location: range.location + delta, length: range.length)
+            } else if editedRange.location >= range.upperBound {
+                return range
+            }
+            return nil
+        }
     }
 
     var lineEndings: LineEnding = .lf
@@ -1178,8 +1258,8 @@ extension TextInputView {
 // MARK: - Editing
 extension TextInputView {
     func insertText(_ text: String) {
-        if !additionalCaretLocations.isEmpty && markedRange == nil
-            && editAtAllCarets(insert: prepareTextForInsertion(text), deletingBackward: false) {
+        if !additionalSelections.isEmpty && markedRange == nil
+            && editAtAllSelections(insert: prepareTextForInsertion(text), deletingBackward: false) {
             return
         }
         let preparedText = prepareTextForInsertion(text)
@@ -1212,7 +1292,7 @@ extension TextInputView {
 
     func deleteBackward() {
         didCallDeleteBackward = true
-        if !additionalCaretLocations.isEmpty && markedRange == nil && editAtAllCarets(insert: "", deletingBackward: true) {
+        if !additionalSelections.isEmpty && markedRange == nil && editAtAllSelections(insert: "", deletingBackward: true) {
             return
         }
         guard let selectedRange = markedRange ?? selectedRange, selectedRange.length > 0 else {
@@ -1359,6 +1439,7 @@ extension TextInputView {
         let textEditHelper = TextEditHelper(stringView: stringView, lineManager: lineManager, lineEndings: lineEndings)
         let textEditResult = textEditHelper.replaceText(in: range, with: newString)
         layoutManager.shiftDecorations(byReplacing: range, newLength: nsNewString.length)
+        shiftSelections(byReplacing: range, newLength: nsNewString.length)
         let textChange = textEditResult.textChange
         let lineChangeSet = textEditResult.lineChangeSet
         let languageModeLineChangeSet = languageMode.textDidChange(textChange)

@@ -132,11 +132,13 @@ final class LayoutManager {
     }
     private(set) var hiddenRows = IndexSet()
     private var hiddenRowsAreDirty = false
-    /// Patch 0012: secondary carets, drawn in the foreground decoration view.
-    var additionalCaretLocations: [Int] = [] {
+    /// Patch 0012/0019: secondary selections, drawn in the decoration views (a caret for a
+    /// zero-length selection, a highlight behind the text otherwise). The primary is `selectedRange`.
+    var additionalSelections: [NSRange] = [] {
         didSet { setNeedsLayout() }
     }
     var additionalCaretColor: UIColor = .systemBlue
+    var additionalSelectionColor: UIColor = UIColor.systemBlue.withAlphaComponent(0.25)
     private let backgroundDecorationView = DecorationView()
     private let foregroundDecorationView = DecorationView()
     private let gutterDecorationView = DecorationView()
@@ -635,7 +637,7 @@ extension LayoutManager {
         foregroundDecorationView.frame = viewportFrame
         let gutterWidth = showLineNumbers ? gutterWidthService.gutterWidth : 0
         gutterDecorationView.frame = CGRect(x: 0, y: viewportFrame.minY, width: gutterWidth, height: viewportFrame.height)
-        guard !sortedDecorations.isEmpty || !additionalCaretLocations.isEmpty, viewportFrame.width > 0, viewportFrame.height > 0,
+        guard !sortedDecorations.isEmpty || !additionalSelections.isEmpty, viewportFrame.width > 0, viewportFrame.height > 0,
               let firstLine = lineManager.line(containingYOffset: insetViewport.minY) else {
             backgroundDecorationView.items = []
             foregroundDecorationView.items = []
@@ -705,10 +707,18 @@ extension LayoutManager {
                 }
             }
         }
-        for caretLocation in additionalCaretLocations where caretLocation >= visibleStart && caretLocation <= visibleEnd {
-            let caret = caretRectService.caretRect(at: caretLocation, allowMovingCaretToNextLineFragment: true)
-            let rect = CGRect(x: caret.minX - viewportFrame.minX, y: caret.minY - viewportFrame.minY, width: 2, height: caret.height)
-            foreground.append(DecorationDrawItem(rect: rect, style: .caret(additionalCaretColor)))
+        for selection in additionalSelections {
+            if selection.length == 0 {
+                guard selection.location >= visibleStart && selection.location <= visibleEnd else { continue }
+                let caret = caretRectService.caretRect(at: selection.location, allowMovingCaretToNextLineFragment: true)
+                let rect = CGRect(x: caret.minX - viewportFrame.minX, y: caret.minY - viewportFrame.minY, width: 2, height: caret.height)
+                foreground.append(DecorationDrawItem(rect: rect, style: .caret(additionalCaretColor)))
+            } else if NSIntersectionRange(selection, NSRange(location: visibleStart, length: visibleEnd - visibleStart)).length > 0 {
+                for selectionRect in selectionRectService.selectionRects(in: selection) {
+                    let rect = selectionRect.rect.offsetBy(dx: -viewportFrame.minX, dy: -viewportFrame.minY)
+                    background.append(DecorationDrawItem(rect: rect, style: .selection(additionalSelectionColor)))
+                }
+            }
         }
         backgroundDecorationView.items = background
         foregroundDecorationView.items = foreground

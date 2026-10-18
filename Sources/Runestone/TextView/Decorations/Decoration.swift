@@ -18,6 +18,8 @@ public struct Decoration: Hashable {
         case gutterDot(UIColor)
         /// A caret bar (secondary carets in multi-cursor editing, patch 0012).
         case caret(UIColor)
+        /// A selection highlight behind the text (secondary selections, patch 0019).
+        case selection(UIColor)
         /// A fold marker in the gutter on the range's first line: › folded, ⌄ open (patch 0016).
         case gutterChevron(UIColor, folded: Bool)
         /// "⋯" in a rounded box just after the range's location (the end of a folded block's first
@@ -48,8 +50,10 @@ public struct Decoration: Hashable {
     }
 
     var isBackground: Bool {
-        if case .background = style { return true }
-        return false
+        switch style {
+        case .background, .selection: true
+        default: false
+        }
     }
 
     /// Moves the range across an edit that replaced `editedRange` with `newLength` characters.
@@ -141,6 +145,9 @@ final class DecorationView: UIView {
             case .caret(let color):
                 color.setFill()
                 UIBezierPath(rect: item.rect).fill()
+            case .selection(let color):
+                color.setFill()
+                UIBezierPath(roundedRect: item.rect, cornerRadius: 2).fill()
             case .foldPlaceholder(let color):
                 let box = UIBezierPath(roundedRect: item.rect, cornerRadius: item.rect.height / 3)
                 color.withAlphaComponent(0.18).setFill()

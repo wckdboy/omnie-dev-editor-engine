@@ -561,9 +561,16 @@ open class TextView: UIScrollView {
         set { textInputView.accessibilityLabel = newValue }
     }
 
-    /// Secondary carets for multi-cursor editing (Omnie-dev patch 0012, prototype). The selected range
-    /// is the primary caret. Typing and backspace apply at all carets; IME marked text stays on the
-    /// primary caret. Locations are UTF-16 offsets.
+    /// Every selection, the primary first (Omnie-dev patch 0019). A range with a length is a
+    /// highlighted occurrence, and a zero-length range is a caret; typing and backspace apply at all
+    /// of them in one undo group. Secondary selections are drawn as a highlight (or a caret when
+    /// empty). IME marked text stays on the primary. Offsets are UTF-16.
+    public var selections: [NSRange] {
+        get { textInputView.selections }
+        set { textInputView.selections = newValue }
+    }
+
+    /// The carets among the secondary selections (patch 0012 compatibility).
     public var additionalCaretLocations: [Int] {
         get { textInputView.additionalCaretLocations }
         set { textInputView.additionalCaretLocations = newValue.sorted() }
@@ -573,6 +580,12 @@ open class TextView: UIScrollView {
     public var additionalCaretColor: UIColor {
         get { textInputView.additionalCaretColor }
         set { textInputView.additionalCaretColor = newValue }
+    }
+
+    /// The color behind a secondary selection with a length.
+    public var additionalSelectionColor: UIColor {
+        get { textInputView.additionalSelectionColor }
+        set { textInputView.additionalSelectionColor = newValue }
     }
 
     /// Diagnostics, diff hunks and authorship marks, drawn above, below or beside the text without

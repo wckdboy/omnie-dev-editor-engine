@@ -1200,7 +1200,9 @@ extension TextInputView {
 
     func text(in range: UITextRange) -> String? {
         if let indexedRange = range as? IndexedRange {
-            return text(in: indexedRange.range.nonNegativeLength)
+            // System callers (Writing Tools on iOS 26.1) crash on nil for empty or end-of-buffer ranges,
+            // so the UITextInput boundary answers "" there. Internal callers keep the nil (#413).
+            return text(in: indexedRange.range.nonNegativeLength) ?? ""
         } else {
             return nil
         }

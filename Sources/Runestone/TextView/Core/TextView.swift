@@ -1174,6 +1174,12 @@ private extension TextView {
             return false
         }
         if selectedRange.length == 0 {
+            // Don't double-close: when the character just after the caret already closes this pair,
+            // leave the typed bracket to insert on its own — typing `(` before `)` gives `()`, not `())`.
+            let followingRange = NSRange(location: range.location + range.length, length: characterPair.trailing.utf16.count)
+            if textInputView.text(in: followingRange) == characterPair.trailing {
+                return false
+            }
             textInputView.insertText(characterPair.leading + characterPair.trailing)
             textInputView.selectedRange = NSRange(location: range.location + characterPair.leading.count, length: 0)
             return true

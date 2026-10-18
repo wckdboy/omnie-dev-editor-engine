@@ -1302,6 +1302,8 @@ extension TextInputView {
         }
         // If there is no marked range or selected range then we fallback to appending text to the end of our string.
         let selectedRange = markedRange ?? selectedRange ?? NSRange(location: stringView.string.length, length: 0)
+        // Patch 0022: insertText while text was marked is an IME commit; it goes to every selection.
+        let isCommittedMarkedText = markedRange != nil && !additionalSelections.isEmpty
         guard shouldChangeText(in: selectedRange, replacementText: preparedText) else {
             isRestoringPreviouslyDeletedText = false
             return
@@ -1317,8 +1319,44 @@ extension TextInputView {
             delegate?.textInputViewDidChangeSelection(self)
         } else {
             replaceText(in: selectedRange, with: preparedText)
+            if isCommittedMarkedText {
+                mirrorCommittedText(preparedText)
+            }
             layoutIfNeeded()
             delegate?.textInputViewDidChangeSelection(self)
+        }
+    }
+
+    /// Patch 0022: text an IME committed at the primary caret — insertText while text was marked —
+    /// is applied at every secondary selection too, like typing, in the same undo group.
+    private func mirrorCommittedText(_ text: String) {
+        let length = stringView.string.length
+        let insertedLength = (text as NSString).length
+        let ranges = additionalSelections
+            .filter { $0.location >= 0 && $0.upperBound <= length }
+            .sorted { $0.location > $1.location }
+        guard !ranges.isEmpty else { return }
+        let lineChangeSet = LineChangeSet()
+        let textEditHelper = TextEditHelper(stringView: stringView, lineManager: lineManager, lineEndings: lineEndings)
+        for range in ranges {
+            let oldText = self.text(in: range) ?? ""
+            addUndoOperation(replacing: NSRange(location: range.location, length: insertedLength), withText: oldText)
+            let result = textEditHelper.replaceText(in: range, with: text)
+            lineChangeSet.union(with: result.lineChangeSet)
+            lineChangeSet.union(with: languageMode.textDidChange(result.textChange))
+            layoutManager.shiftDecorations(byReplacing: range, newLength: insertedLength)
+        }
+        var moved: [NSRange] = []
+        var delta = 0
+        for range in ranges.reversed() {
+            moved.append(NSRange(location: range.location + delta + insertedLength, length: 0))
+            delta += insertedLength - range.length
+        }
+        additionalSelections = moved
+        applyLineChangesToLayoutManager(lineChangeSet)
+        delegate?.textInputViewDidChange(self)
+        if !lineChangeSet.insertedLines.isEmpty || !lineChangeSet.removedLines.isEmpty {
+            delegate?.textInputViewDidInvalidateContentSize(self)
         }
     }
 

@@ -55,14 +55,25 @@ final class MultiSelectionTests: XCTestCase {
                        "the one overlapping the primary is dropped, the duplicates merged")
     }
 
-    func testAnOrdinaryEditMovesTheSecondarySelections() {
-        let (textView, _) = makeTextView("abcd ef\n")
+    func testAnOrdinaryEditMovesTheSecondarySelections() {        let (textView, _) = makeTextView("abcd ef\n")
         textView.selections = [NSRange(location: 0, length: 0), NSRange(location: 5, length: 2)]
         let start = textView.position(from: textView.beginningOfDocument, offset: 0)!
         textView.replace(textView.textRange(from: start, to: start)!, withText: "xx")
         XCTAssertEqual(textView.text, "xxabcd ef\n")
         XCTAssertEqual(textView.selections, [NSRange(location: 2, length: 0), NSRange(location: 7, length: 2)],
                        "the secondary selection moved by the inserted text")
+    }
+
+    /// Patch 0022: an IME commit — insertText while text was marked — goes to every selection.
+    func testAnImeCommitGoesToEverySelection() {
+        let (textView, input) = makeTextView("ab\ncd\n")
+        textView.selections = [NSRange(location: 1, length: 0), NSRange(location: 4, length: 0)]
+        // Compose at the primary (the marked text stays there), then commit.
+        input.setMarkedText("하", selectedRange: NSRange(location: 0, length: 0))
+        XCTAssertEqual(textView.text, "a하b\ncd\n")
+        input.insertText("한")
+        XCTAssertEqual(textView.text, "a한b\nc한d\n", "the committed text landed at both carets")
+        XCTAssertEqual(textView.selections, [NSRange(location: 2, length: 0), NSRange(location: 6, length: 0)])
     }
 
     func testSelectingAllAtOnceSendsOneSelectionChange() {
